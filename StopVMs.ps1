@@ -1,1 +1,2 @@
-Switch-Azuremode AzureResourceManager
+Import-module AzureResourceManager
+Login-azurermaccount
