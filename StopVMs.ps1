@@ -1,0 +1,1 @@
+Switch-Azuremode AzureResourceManager
