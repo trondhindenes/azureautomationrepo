@@ -1,0 +1,290 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {},
+  "variables": {
+    "vnetAddressRange": "10.0.0.0/16",
+    "subnetAddressRange": "10.0.0.0/24",
+    "subnetName": "subnet",
+    "subnet-id": "[concat(resourceId('Microsoft.Network/virtualNetworks','VNET'),'/subnets/','subnet')]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Compute/availabilitySets",
+      "name": "myavset",
+      "apiVersion": "2015-05-01-preview",
+      "location": "West Europe",
+      "properties": {}
+    },
+    {
+      "apiVersion": "2015-05-01-preview",
+      "type": "Microsoft.Network/publicIPAddresses",
+      "name": "publicIp",
+      "location": "West Europe",
+      "properties": {
+        "publicIPAllocationMethod": "Dynamic",
+        "dnsSettings": {
+          "domainNameLabel": "trondhrdpthingy"
+        }
+      }
+    },
+    {
+      "apiVersion": "2015-05-01-preview",
+      "type": "Microsoft.Storage/storageAccounts",
+      "name": "thrdpstoeu",
+      "location": "West Europe",
+      "properties": {
+        "accountType": "Standard_LRS"
+      }
+    },
+    {
+      "apiVersion": "2015-05-01-preview",
+      "type": "Microsoft.Network/virtualNetworks",
+      "name": "VNET",
+      "location": "West Europe",
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": [
+            "[variables('vnetAddressRange')]"
+          ]
+        },
+        "subnets": [
+          {
+            "name": "subnet",
+            "properties": {
+              "addressPrefix": "10.0.0.0/24"
+            }
+          }
+        ]
+      }
+    }
+    ,
+        {
+      "apiVersion": "2015-05-01-preview",
+      "name": "loadBalancer",
+      "type": "Microsoft.Network/loadBalancers",
+      "location": "West Europe",
+      "dependsOn": [
+        "Microsoft.Network/publicIPAddresses/publicIp"
+      ],
+      "properties": {
+        "frontendIPConfigurations": [
+          {
+            "name": "LBFE",
+            "properties": {
+              "publicIPAddress": {
+                "id": "[resourceId('Microsoft.Network/publicIPAddresses','publicIp')]"
+              }
+            }
+          }
+        ],
+        "backendAddressPools": [
+          {
+            "name": "LBBAP"
+          }
+        ],
+        "inboundNatRules": [
+                    {
+            "name": "rdprdpvm01",
+            "properties": {
+              "frontendIPConfiguration": {
+                "id": "[concat(resourceId('Microsoft.Network/loadBalancers','loadBalancer'),'/frontendIPConfigurations/LBFE')]"
+              },
+              "protocol": "tcp",
+              "frontendPort": "3390",
+              "backendPort": 3389,
+              "enableFloatingIP": false
+            }
+          }
+                ,
+                          {
+            "name": "rdprdpvm02",
+            "properties": {
+              "frontendIPConfiguration": {
+                "id": "[concat(resourceId('Microsoft.Network/loadBalancers','loadBalancer'),'/frontendIPConfigurations/LBFE')]"
+              },
+              "protocol": "tcp",
+              "frontendPort": "3391",
+              "backendPort": 3389,
+              "enableFloatingIP": false
+            }
+          }
+                        ]
+      }
+    }
+    ,
+        {
+      "apiVersion": "2015-05-01-preview",
+      "type": "Microsoft.Network/networkInterfaces",
+      "name": "rdpvm01-nic",
+      "location": "West Europe",
+      "dependsOn": [
+        "Microsoft.Network/virtualNetworks/VNET",
+        "Microsoft.Network/loadBalancers/loadBalancer"
+      ],
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig",
+            "properties": {
+              "privateIPAllocationMethod": "Dynamic",
+              "subnet": {
+                "id": "[variables('subnet-id')]"
+              },
+              "loadBalancerBackendAddressPools": [
+                {
+                  "id": "[concat(resourceId('Microsoft.Network/loadBalancers','loadBalancer'),'/backendAddressPools/LBBAP')]"
+                }
+              ],
+              "loadBalancerInboundNatRules": [
+                {
+                  "id": "[concat(resourceId('Microsoft.Network/loadBalancers','loadBalancer'),'/inboundNatRules/rdprdpvm01')]"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+    ,
+    {
+      "apiVersion": "2015-06-15",
+      "type": "Microsoft.Compute/virtualMachines",
+      "name": "rdpvm01",
+      "location": "West Europe",
+      "dependsOn": [
+        "Microsoft.Storage/storageAccounts/thrdpstoeu",
+        "Microsoft.Network/networkInterfaces/rdpvm01-nic"
+      ],
+      "properties": {
+        "availabilitySet": {
+          "id": "[resourceId('Microsoft.Compute/availabilitySets','myavset')]"
+        },
+        "hardwareProfile": {
+          "vmSize": "Standard_A2"
+        },
+        "osProfile": {
+          "computername": "rdpvm01",
+          "adminUsername": "thadministrator",
+          "adminPassword": "SnarkyD0g999"
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "MicrosoftWindowsServer",
+            "offer": "WindowsServer",
+            "sku": "2012-R2-Datacenter",
+            "version": "latest"
+          },
+          "osDisk": {
+            "name": "osdisk",
+            "vhd": {
+              "uri": "http://thrdpstoeu.blob.core.windows.net/vhds/rdpvm01-osdisk.vhd"
+            },
+            "caching": "ReadWrite",
+            "createOption": "FromImage"
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id":"[resourceId('Microsoft.Network/networkInterfaces','rdpvm01-nic')]"
+            }
+          ]
+        },
+        "diagnosticsProfile": {
+          "bootDiagnostics": {
+             "enabled": "true",
+             "storageUri": "http://thrdpstoeu.blob.core.windows.net"
+          }
+        }
+      }
+    }
+            ,
+            {
+      "apiVersion": "2015-05-01-preview",
+      "type": "Microsoft.Network/networkInterfaces",
+      "name": "rdpvm02-nic",
+      "location": "West Europe",
+      "dependsOn": [
+        "Microsoft.Network/virtualNetworks/VNET",
+        "Microsoft.Network/loadBalancers/loadBalancer"
+      ],
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig",
+            "properties": {
+              "privateIPAllocationMethod": "Dynamic",
+              "subnet": {
+                "id": "[variables('subnet-id')]"
+              },
+              "loadBalancerBackendAddressPools": [
+                {
+                  "id": "[concat(resourceId('Microsoft.Network/loadBalancers','loadBalancer'),'/backendAddressPools/LBBAP')]"
+                }
+              ],
+              "loadBalancerInboundNatRules": [
+                {
+                  "id": "[concat(resourceId('Microsoft.Network/loadBalancers','loadBalancer'),'/inboundNatRules/rdprdpvm02')]"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+    ,
+    {
+      "apiVersion": "2015-06-15",
+      "type": "Microsoft.Compute/virtualMachines",
+      "name": "rdpvm02",
+      "location": "West Europe",
+      "dependsOn": [
+        "Microsoft.Storage/storageAccounts/thrdpstoeu",
+        "Microsoft.Network/networkInterfaces/rdpvm02-nic"
+      ],
+      "properties": {
+        "availabilitySet": {
+          "id": "[resourceId('Microsoft.Compute/availabilitySets','myavset')]"
+        },
+        "hardwareProfile": {
+          "vmSize": "Standard_A2"
+        },
+        "osProfile": {
+          "computername": "rdpvm02",
+          "adminUsername": "thadministrator",
+          "adminPassword": "SnarkyD0g999"
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "MicrosoftWindowsServer",
+            "offer": "WindowsServer",
+            "sku": "2012-R2-Datacenter",
+            "version": "latest"
+          },
+          "osDisk": {
+            "name": "osdisk",
+            "vhd": {
+              "uri": "http://thrdpstoeu.blob.core.windows.net/vhds/rdpvm02-osdisk.vhd"
+            },
+            "caching": "ReadWrite",
+            "createOption": "FromImage"
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id":"[resourceId('Microsoft.Network/networkInterfaces','rdpvm02-nic')]"
+            }
+          ]
+        },
+        "diagnosticsProfile": {
+          "bootDiagnostics": {
+             "enabled": "true",
+             "storageUri": "http://thrdpstoeu.blob.core.windows.net"
+          }
+        }
+      }
+    }
+              ]
+}
